@@ -1,0 +1,7 @@
+#read version from input
+version=$1
+
+#replace version in button text
+sed -i "s/@version\(\s\+\)[0-9]\+\.[0-9]\+/@version\1$version/g" GroupGridView.php BootGroupGridView.php
+
+echo "updated to $version"
