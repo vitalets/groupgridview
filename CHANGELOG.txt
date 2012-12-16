@@ -1,2 +1,6 @@
 Groupgridview changelog
 =============================
+
+Version 1.2 Dec 16, 2012
+----------------------------
+[enh #1]: Compability with Yii-Bootstrap 1.0 and above (@Yiivgeny)
