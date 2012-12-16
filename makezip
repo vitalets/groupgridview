@@ -2,4 +2,4 @@
 version=$(head -20 GroupGridView.php | sed -n 's/^.*\([0-9]\+\.[0-9]\+\).*/\1/p') 
 
 rm -rf *.zip
-zip -rT groupgridview_$version.zip GroupGridView.php BootGroupGridView.php README.md CHANGELOG.txt
+zip -rT ../groupgridview_$version.zip GroupGridView.php BootGroupGridView.php README.md CHANGELOG.txt
