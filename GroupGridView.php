@@ -12,9 +12,12 @@ Yii::import('zii.widgets.grid.CGridView');
 */
 class GroupGridView extends CGridView {
 
-    const MERGE_SIMPLE = 'simple';
-    const MERGE_NESTED = 'nested';
-    const MERGE_FIRSTROW = 'firstrow';
+    //column values are merged independently
+    const MERGE_SIMPLE = 'simple'; 
+    //column values are merged if at least one value of nested columns changes (makes sense when several columns in $mergeColumns option)
+    const MERGE_NESTED = 'nested';    
+    //column values are merged independently, but value is shown in first row of group and below cells just cleared (instead of `rowspan`)
+    const MERGE_FIRSTROW = 'firstrow'; 
     
     public $mergeColumns = array();
     public $mergeType = self::MERGE_SIMPLE;
