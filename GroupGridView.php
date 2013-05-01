@@ -29,6 +29,8 @@ class GroupGridView extends CGridView {
     public $extraRowExpression;
     //position of extraRow: 'before' | 'after' 
     public $extraRowPos = 'before';
+    //totals expression
+    public $extraRowTotals;
     
     //array of changes (by data index)                      
     private $_changes;
@@ -76,6 +78,12 @@ class GroupGridView extends CGridView {
             'index' => 0,
             );
         }
+        
+        //calc totals for the first row
+        $totals = array();
+        if($this->extraRowTotals) {
+            $this->evaluateExpression($this->extraRowTotals, array('data'=>$data[0], 'row'=>0, 'totals' => &$totals));
+        }
 
         //iterate data 
         for($i = 1; $i < count($data); $i++) {
@@ -118,6 +126,10 @@ class GroupGridView extends CGridView {
                     if(!isset($this->_changes[$indexOfChange]['count'])) {
                         $this->_changes[$indexOfChange]['count'] = $lastStored[$colName]['count'];
                     }
+                    
+                    //save and reset totals
+                    $this->_changes[$indexOfChange]['totals'] = $totals;
+                    $totals = array();
 
                     //update lastStored for particular column
                     $lastStored[$colName] = array(
@@ -130,6 +142,11 @@ class GroupGridView extends CGridView {
                     $lastStored[$colName]['count']++;
                 } 
             }
+            
+            //calc totals for that row
+            if($this->extraRowTotals) {
+                $this->evaluateExpression($this->extraRowTotals, array('data'=>$data[$i], 'row'=>$i, 'totals' => &$totals));
+            }  
         }
 
         //storing for last row
@@ -139,7 +156,9 @@ class GroupGridView extends CGridView {
             //also store count of lines for group
             if(!isset($this->_changes[$indexOfChange]['count'])) {
                 $this->_changes[$indexOfChange]['count'] = $v['count'];
-            }  
+            }
+            //save totals for last row
+            $this->_changes[$indexOfChange]['totals'] = $totals;  
         }
     }
     
@@ -249,15 +268,15 @@ class GroupGridView extends CGridView {
     /**
     * renders extra row
     * 
-    * @param mixed $beforeRow
+    * @param mixed $row
     * @param mixed $change
     */
-    private function renderExtraRow($beforeRow, $change, $columnsInExtra)
+    private function renderExtraRow($row, $change, $columnsInExtra)
     {
-        $data = $this->dataProvider->data[$beforeRow]; 
+        $data = $this->dataProvider->data[$row]; 
         if($this->extraRowExpression) { //user defined expression, use it!
-            $content = $this->evaluateExpression($this->extraRowExpression, array('data'=>$data, 'row'=>$beforeRow, 'values' => $change['columns']));
-        } else {  //generte value
+            $content = $this->evaluateExpression($this->extraRowExpression, array('data'=>$data, 'row'=>$row, 'values' => $change['columns'], 'totals' => $change['totals']));
+        } else {  //generate value
             $values = array();
             foreach($columnsInExtra as $c) {
                 $values[] = $change['columns'][$c]['value'];
