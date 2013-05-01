@@ -23,9 +23,14 @@ class GroupGridView extends CGridView {
     public $mergeType = self::MERGE_SIMPLE;
     public $mergeCellCss = 'text-align: center; vertical-align: middle';
     
+    //list of columns on which change extrarow will be triggered
     public $extraRowColumns = array();
+    //expression to get value shown in extrarow
     public $extraRowExpression;
-                          
+    //position of extraRow: 'before' | 'after' 
+    public $extraRowPos = 'before';
+    
+    //array of changes (by data index)                      
     private $_changes;
 
     public function renderTableBody()
@@ -60,7 +65,8 @@ class GroupGridView extends CGridView {
             }
         }
 
-
+        //$lastStored is running array of previously stored values for each column
+          
         //values for first row
         $lastStored = $this->getRowValues($groupColumns, $data[0], 0);
         foreach($lastStored as $colName => $value) {
@@ -104,11 +110,13 @@ class GroupGridView extends CGridView {
                 if($saveChangeForAllColumns || $saveChange) { 
                     $changeOccured = true;
 
-                    //store in class var
-                    $prevIndex = $lastStored[$colName]['index'];
-                    $this->_changes[$prevIndex]['columns'][$colName] = $lastStored[$colName];
-                    if(!isset($this->_changes[$prevIndex]['count'])) {
-                        $this->_changes[$prevIndex]['count'] = $lastStored[$colName]['count'];
+                    //index of row to which associate change
+                    $indexOfChange = $this->extraRowPos == 'before' ? $lastStored[$colName]['index'] : $i - 1;
+                    //chnage is triggered in $prevIndex, store that information in _changes array
+                    $this->_changes[$indexOfChange]['columns'][$colName] = $lastStored[$colName];
+                    //also store count of lines for group
+                    if(!isset($this->_changes[$indexOfChange]['count'])) {
+                        $this->_changes[$indexOfChange]['count'] = $lastStored[$colName]['count'];
                     }
 
                     //update lastStored for particular column
@@ -126,10 +134,11 @@ class GroupGridView extends CGridView {
 
         //storing for last row
         foreach($lastStored as $colName => $v) {
-            $prevIndex = $v['index'];
-            $this->_changes[$prevIndex]['columns'][$colName] = $v;
-            if(!isset($this->_changes[$prevIndex]['count'])) {
-                $this->_changes[$prevIndex]['count'] = $v['count'];
+            $indexOfChange = $this->extraRowPos == 'before' ? $v['index'] : count($data) - 1; 
+            $this->_changes[$indexOfChange]['columns'][$colName] = $v;
+            //also store count of lines for group
+            if(!isset($this->_changes[$indexOfChange]['count'])) {
+                $this->_changes[$indexOfChange]['count'] = $v['count'];
             }  
         }
     }
@@ -137,12 +146,14 @@ class GroupGridView extends CGridView {
     public function renderTableRow($row)
     {
         $change = false;
+        $columnsInExtra = array();
         if($this->_changes && array_key_exists($row, $this->_changes)) {
             $change = $this->_changes[$row];
             //if change in extracolumns --> put extra row
             $columnsInExtra = array_intersect(array_keys($change['columns']), $this->extraRowColumns);
-            if(count($columnsInExtra) > 0) {
-                $this->renderExtraRow($row, $change, $columnsInExtra);
+            //extraRowPos = before
+            if(count($columnsInExtra) > 0 && $this->extraRowPos == 'before') {
+                $this->renderExtraRow($row, $this->_changes[$row], $columnsInExtra);
             }
         }
 
@@ -203,6 +214,11 @@ class GroupGridView extends CGridView {
         }
 
         echo "</tr>\n";
+        
+        //extraRowPos = after
+        if(count($columnsInExtra) > 0 && $this->extraRowPos != 'before') {
+            $this->renderExtraRow($row, $this->_changes[$row], $columnsInExtra);
+        }
     }    
     
     /**
