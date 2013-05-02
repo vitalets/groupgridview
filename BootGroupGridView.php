@@ -8,7 +8,7 @@ Yii::import('bootstrap.widgets.TbGridView');
 * @category       User Interface
 * @package        extensions
 * @author         Vitaliy Potapov <noginsk@rambler.ru>
-* @version        1.2
+* @version        1.3
 */
 class BootGroupGridView extends TbGridView {
 

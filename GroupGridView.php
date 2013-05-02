@@ -8,7 +8,7 @@ Yii::import('zii.widgets.grid.CGridView');
 * @category       User Interface
 * @package        extensions
 * @author         Vitaliy Potapov <noginsk@rambler.ru>
-* @version        1.2
+* @version        1.3
 */
 class GroupGridView extends CGridView {
 
