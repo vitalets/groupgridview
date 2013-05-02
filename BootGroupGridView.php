@@ -11,18 +11,27 @@ Yii::import('bootstrap.widgets.TbGridView');
 * @version        1.3
 */
 class BootGroupGridView extends TbGridView {
-
-    const MERGE_SIMPLE = 'simple';
-    const MERGE_NESTED = 'nested';
-    const MERGE_FIRSTROW = 'firstrow';
+    //column values are merged independently
+    const MERGE_SIMPLE = 'simple'; 
+    //column values are merged if at least one value of nested columns changes (makes sense when several columns in $mergeColumns option)
+    const MERGE_NESTED = 'nested';    
+    //column values are merged independently, but value is shown in first row of group and below cells just cleared (instead of `rowspan`)
+    const MERGE_FIRSTROW = 'firstrow'; 
     
     public $mergeColumns = array();
     public $mergeType = self::MERGE_SIMPLE;
     public $mergeCellCss = 'text-align: center; vertical-align: middle';
     
+    //list of columns on which change extrarow will be triggered
     public $extraRowColumns = array();
+    //expression to get value shown in extrarow
     public $extraRowExpression;
-                          
+    //position of extraRow: 'before' | 'after' 
+    public $extraRowPos = 'before';
+    //totals expression: function($data, $row, &$totals)
+    public $extraRowTotals;
+    
+    //array storing information on which row change occured                      
     private $_changes;
 
     public function renderTableBody()
@@ -57,7 +66,8 @@ class BootGroupGridView extends TbGridView {
             }
         }
 
-
+        //$lastStored is running array of previously stored values for each column
+          
         //values for first row
         $lastStored = $this->getRowValues($groupColumns, $data[0], 0);
         foreach($lastStored as $colName => $value) {
@@ -66,6 +76,12 @@ class BootGroupGridView extends TbGridView {
             'count' => 1,
             'index' => 0,
             );
+        }
+        
+        //calc totals for the first row
+        $totals = array();
+        if($this->extraRowTotals) {
+            $this->evaluateExpression($this->extraRowTotals, array('data'=>$data[0], 'row'=>0, 'totals' => &$totals));
         }
 
         //iterate data 
@@ -101,12 +117,18 @@ class BootGroupGridView extends TbGridView {
                 if($saveChangeForAllColumns || $saveChange) { 
                     $changeOccured = true;
 
-                    //store in class var
-                    $prevIndex = $lastStored[$colName]['index'];
-                    $this->_changes[$prevIndex]['columns'][$colName] = $lastStored[$colName];
-                    if(!isset($this->_changes[$prevIndex]['count'])) {
-                        $this->_changes[$prevIndex]['count'] = $lastStored[$colName]['count'];
+                    //index of row to which associate change
+                    $indexOfChange = $this->extraRowPos == 'before' ? $lastStored[$colName]['index'] : $i - 1;
+                    //chnage is triggered in $prevIndex, store that information in _changes array
+                    $this->_changes[$indexOfChange]['columns'][$colName] = $lastStored[$colName];
+                    //also store count of lines for group
+                    if(!isset($this->_changes[$indexOfChange]['count'])) {
+                        $this->_changes[$indexOfChange]['count'] = $lastStored[$colName]['count'];
                     }
+                    
+                    //save and reset totals
+                    $this->_changes[$indexOfChange]['totals'] = $totals;
+                    $totals = array();
 
                     //update lastStored for particular column
                     $lastStored[$colName] = array(
@@ -119,27 +141,37 @@ class BootGroupGridView extends TbGridView {
                     $lastStored[$colName]['count']++;
                 } 
             }
+            
+            //calc totals for that row
+            if($this->extraRowTotals) {
+                $this->evaluateExpression($this->extraRowTotals, array('data'=>$data[$i], 'row'=>$i, 'totals' => &$totals));
+            }  
         }
 
         //storing for last row
         foreach($lastStored as $colName => $v) {
-            $prevIndex = $v['index'];
-            $this->_changes[$prevIndex]['columns'][$colName] = $v;
-            if(!isset($this->_changes[$prevIndex]['count'])) {
-                $this->_changes[$prevIndex]['count'] = $v['count'];
-            }  
+            $indexOfChange = $this->extraRowPos == 'before' ? $v['index'] : count($data) - 1; 
+            $this->_changes[$indexOfChange]['columns'][$colName] = $v;
+            //also store count of lines for group
+            if(!isset($this->_changes[$indexOfChange]['count'])) {
+                $this->_changes[$indexOfChange]['count'] = $v['count'];
+            }
+            //save totals for last row
+            $this->_changes[$indexOfChange]['totals'] = $totals;  
         }
     }
     
     public function renderTableRow($row)
     {
         $change = false;
+        $columnsInExtra = array();
         if($this->_changes && array_key_exists($row, $this->_changes)) {
             $change = $this->_changes[$row];
             //if change in extracolumns --> put extra row
             $columnsInExtra = array_intersect(array_keys($change['columns']), $this->extraRowColumns);
-            if(count($columnsInExtra) > 0) {
-                $this->renderExtraRow($row, $change, $columnsInExtra);
+            //extraRowPos = before
+            if(count($columnsInExtra) > 0 && $this->extraRowPos == 'before') {
+                $this->renderExtraRow($row, $this->_changes[$row], $columnsInExtra);
             }
         }
 
@@ -200,6 +232,11 @@ class BootGroupGridView extends TbGridView {
         }
 
         echo "</tr>\n";
+        
+        //extraRowPos = after
+        if(count($columnsInExtra) > 0 && $this->extraRowPos != 'before') {
+            $this->renderExtraRow($row, $this->_changes[$row], $columnsInExtra);
+        }
     }    
     
     /**
@@ -230,15 +267,15 @@ class BootGroupGridView extends TbGridView {
     /**
     * renders extra row
     * 
-    * @param mixed $beforeRow
+    * @param mixed $row
     * @param mixed $change
     */
-    private function renderExtraRow($beforeRow, $change, $columnsInExtra)
+    private function renderExtraRow($row, $change, $columnsInExtra)
     {
-        $data = $this->dataProvider->data[$beforeRow]; 
+        $data = $this->dataProvider->data[$row]; 
         if($this->extraRowExpression) { //user defined expression, use it!
-            $content = $this->evaluateExpression($this->extraRowExpression, array('data'=>$data, 'row'=>$beforeRow, 'values' => $change['columns']));
-        } else {  //generte value
+            $content = $this->evaluateExpression($this->extraRowExpression, array('data'=>$data, 'row'=>$row, 'values' => $change['columns'], 'totals' => $change['totals']));
+        } else {  //generate value
             $values = array();
             foreach($columnsInExtra as $c) {
                 $values[] = $change['columns'][$c]['value'];
