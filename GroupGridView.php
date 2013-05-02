@@ -29,10 +29,10 @@ class GroupGridView extends CGridView {
     public $extraRowExpression;
     //position of extraRow: 'before' | 'after' 
     public $extraRowPos = 'before';
-    //totals expression
+    //totals expression: function($data, $row, &$totals)
     public $extraRowTotals;
     
-    //array of changes (by data index)                      
+    //array storing information on which row change occured                      
     private $_changes;
 
     public function renderTableBody()
