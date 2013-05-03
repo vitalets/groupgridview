@@ -1,7 +1,7 @@
 Groupgridview changelog
 =============================
 
-Version 1.3 May 02, 2013
+Version 1.3 May 03, 2013
 ----------------------------
 [enh]: added param `extraRowTotals' (@vitalets)
 [enh]: added param `extraRowPos' (@vitalets)
