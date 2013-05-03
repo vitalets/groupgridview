@@ -11,7 +11,7 @@ Yii::import('bootstrap.widgets.TbGridView');
 * @version        1.3
 */
 class BootGroupGridView extends TbGridView {
-    //column values are merged independently
+ //column values are merged independently
     const MERGE_SIMPLE = 'simple'; 
     //column values are merged if at least one value of nested columns changes (makes sense when several columns in $mergeColumns option)
     const MERGE_NESTED = 'nested';    
@@ -26,13 +26,13 @@ class BootGroupGridView extends TbGridView {
     public $extraRowColumns = array();
     //expression to get value shown in extrarow
     public $extraRowExpression;
-    //position of extraRow: 'before' | 'after' 
-    public $extraRowPos = 'before';
+    //position of extraRow relative to group: 'above' | 'below' 
+    public $extraRowPos = 'above';
     //totals expression: function($data, $row, &$totals)
     public $extraRowTotals;
     
-    //array storing information on which row change occured                      
-    private $_changes;
+    //array with groups
+    private $_groups = array();
 
     public function renderTableBody()
     {
@@ -66,15 +66,18 @@ class BootGroupGridView extends TbGridView {
             }
         }
 
-        //$lastStored is running array of previously stored values for each column
+        //storage for groups in each column
+        $groups = array();
           
         //values for first row
-        $lastStored = $this->getRowValues($groupColumns, $data[0], 0);
-        foreach($lastStored as $colName => $value) {
-            $lastStored[$colName] = array(
-            'value' => $value,
-            'count' => 1,
-            'index' => 0,
+        $values = $this->getRowValues($groupColumns, $data[0], 0);
+        foreach($values as $colName => $value) {
+            $groups[$colName][] = array(
+                'value'  => $value,
+                'column' => $colName,
+                'start'  => 0,
+                //end - later
+                //totals - later
             );
         }
         
@@ -91,17 +94,18 @@ class BootGroupGridView extends TbGridView {
 
             //define is change occured. Need this extra foreach for correctly proceed extraRows
             $changedColumns = array();
-            foreach($current as $colName => $curValue) {  
-                if($curValue != $lastStored[$colName]['value']) {
+            foreach($current as $colName => $curValue) {
+                $prev = end($groups[$colName]);  
+                if($curValue != $prev['value']) {
                     $changedColumns[] = $colName;
                 }
             }
             
             /*
-             if this flag = true -> we will write change (to $this->_changes) for all grouping columns.
+             if this flag = true -> we will write change for all grouping columns.
              It's required when change of any column from extraRowColumns occurs
             */
-            $saveChangeForAllColumns = (count(array_intersect($changedColumns, $this->extraRowColumns)) > 0);
+            $extraRowColumnChanged = (count(array_intersect($changedColumns, $this->extraRowColumns)) > 0);
             
             /*
              this changeOccured related to foreach below. It is required only for mergeType == self::MERGE_NESTED, 
@@ -110,36 +114,30 @@ class BootGroupGridView extends TbGridView {
             $changeOccured = false;
             foreach($current as $colName => $curValue) {
                 //value changed
-                $valueChanged = ($curValue != $lastStored[$colName]['value']);
+                $valueChanged = in_array($colName, $changedColumns);
                 //change already occured in this loop and mergeType set to MERGETYPE_NESTED
                 $saveChange = $valueChanged || ($changeOccured && $this->mergeType == self::MERGE_NESTED);
                 
-                if($saveChangeForAllColumns || $saveChange) { 
+                if($extraRowColumnChanged || $saveChange) { 
                     $changeOccured = true;
-
-                    //index of row to which associate change
-                    $indexOfChange = $this->extraRowPos == 'before' ? $lastStored[$colName]['index'] : $i - 1;
-                    //chnage is triggered in $prevIndex, store that information in _changes array
-                    $this->_changes[$indexOfChange]['columns'][$colName] = $lastStored[$colName];
-                    //also store count of lines for group
-                    if(!isset($this->_changes[$indexOfChange]['count'])) {
-                        $this->_changes[$indexOfChange]['count'] = $lastStored[$colName]['count'];
-                    }
-                    
-                    //save and reset totals
-                    $this->_changes[$indexOfChange]['totals'] = $totals;
-                    $totals = array();
-
-                    //update lastStored for particular column
-                    $lastStored[$colName] = array(
-                    'value' => $curValue,
-                    'count' => 1,
-                    'index' => $i,
-                    );                    
-
-                } else {
-                    $lastStored[$colName]['count']++;
+                    $lastIndex = count($groups[$colName]) - 1;
+                 
+                    //finalize prev group
+                    $groups[$colName][$lastIndex]['end'] = $i - 1;
+                    $groups[$colName][$lastIndex]['totals'] = $totals;
+                   
+                    //begin new group
+                    $groups[$colName][] = array(
+                      'start'   => $i,
+                      'column'  => $colName,
+                      'value'   => $curValue,
+                    );
                 } 
+            }
+            
+            //if change in extrarowcolumn --> reset totals
+            if($extraRowColumnChanged) {
+                $totals = array();  
             }
             
             //calc totals for that row
@@ -148,23 +146,27 @@ class BootGroupGridView extends TbGridView {
             }  
         }
 
-        //storing for last row
-        foreach($lastStored as $colName => $v) {
-            $indexOfChange = $this->extraRowPos == 'before' ? $v['index'] : count($data) - 1; 
-            $this->_changes[$indexOfChange]['columns'][$colName] = $v;
-            //also store count of lines for group
-            if(!isset($this->_changes[$indexOfChange]['count'])) {
-                $this->_changes[$indexOfChange]['count'] = $v['count'];
-            }
-            //save totals for last row
-            $this->_changes[$indexOfChange]['totals'] = $totals;  
+        //finalize group for last row
+        foreach($groups as $colName => $v) {
+            $lastIndex = count($groups[$colName]) - 1;
+            $groups[$colName][$lastIndex]['end'] = count($data) - 1;
+            $groups[$colName][$lastIndex]['totals'] = $totals;
         }
+        
+        $this->_groups = $groups;
     }
     
     public function renderTableRow($row)
     {
-        $change = false;
-        $columnsInExtra = array();
+        $extraRowEdge = null;
+        if(count($this->extraRowColumns)) {
+            $colName = $this->extraRowColumns[0]; 
+            $extraRowEdge = $this->isGroupEdge($colName, $row);
+            if($this->extraRowPos == 'above' && isset($extraRowEdge['start'])) {
+                $this->renderExtraRow($row, $extraRowEdge['group']['totals']); 
+            }
+        }
+        /*
         if($this->_changes && array_key_exists($row, $this->_changes)) {
             $change = $this->_changes[$row];
             //if change in extracolumns --> put extra row
@@ -174,6 +176,7 @@ class BootGroupGridView extends TbGridView {
                 $this->renderExtraRow($row, $this->_changes[$row], $columnsInExtra);
             }
         }
+        */
 
         // original CGridView code
         if($this->rowCssClassExpression!==null) 
@@ -187,55 +190,47 @@ class BootGroupGridView extends TbGridView {
                 echo '<tr>';
 
 
-        if(!$this->_changes) { //standart CGridview's render
-            foreach($this->columns as $column) {   
-                $column->renderDataCell($row);   
-            }            
-        } else {  //for grouping       
+        foreach($this->columns as $column) {
+            $isGroupColumn = property_exists($column, 'name') && in_array($column->name, $this->mergeColumns);
 
-            foreach($this->columns as $column) {
-
-                $isGroupColumn = property_exists($column, 'name') && in_array($column->name, $this->mergeColumns);
-
-                if(!$isGroupColumn) {
-                    $column->renderDataCell($row);     
-                    continue;
-                }
-
-                $isChangedColumn = $change && array_key_exists($column->name, $change['columns']);
-
-                //for rowspan show only changes (with rowspan)
-                switch($this->mergeType) {
-                    case self::MERGE_SIMPLE: 
-                    case self::MERGE_NESTED: 
-                        if($isChangedColumn) {
-                            $options = $column->htmlOptions;
-                            $column->htmlOptions['rowspan'] = $change['columns'][$column->name]['count'];
-                            $column->htmlOptions['class'] = 'merge';
-                            $style = isset($column->htmlOptions['style']) ? $column->htmlOptions['style'] : '';
-                            $column->htmlOptions['style'] = $style.';'.$this->mergeCellCss;
-                            $column->renderDataCell($row);
-                            $column->htmlOptions = $options;
-                        }
-                        break;
-
-                    case self::MERGE_FIRSTROW:
-                        if($isChangedColumn) {
-                            $column->renderDataCell($row);
-                        } else {
-                            echo '<td></td>'; 
-                        }
-                        break;
-                }
-
+            if(!$isGroupColumn) {
+                $column->renderDataCell($row);     
+                continue;
             }
+
+            //is curent row appears on edge of group
+            $edge = $this->isGroupEdge($column->name, $row);
+
+            switch($this->mergeType) {
+                case self::MERGE_SIMPLE: 
+                case self::MERGE_NESTED: 
+                    if(isset($edge['start'])) {
+                        $options = $column->htmlOptions;
+                        $column->htmlOptions['rowspan'] = $edge['group']['end'] - $edge['group']['start'] + 1; 
+                        $column->htmlOptions['class'] = 'merge';
+                        $style = isset($column->htmlOptions['style']) ? $column->htmlOptions['style'] : '';
+                        $column->htmlOptions['style'] = $style.';'.$this->mergeCellCss;
+                        $column->renderDataCell($row);
+                        $column->htmlOptions = $options;
+                    }
+                    break;
+
+                case self::MERGE_FIRSTROW:
+                    if(isset($edge['start'])) {
+                        $column->renderDataCell($row);
+                    } else {
+                        echo '<td></td>'; 
+                    }
+                    break;
+            }
+
         }
 
         echo "</tr>\n";
         
         //extraRowPos = after
-        if(count($columnsInExtra) > 0 && $this->extraRowPos != 'before') {
-            $this->renderExtraRow($row, $this->_changes[$row], $columnsInExtra);
+        if(count($this->extraRowColumns) && $this->extraRowPos == 'below' && isset($extraRowEdge['end'])) {
+            $this->renderExtraRow($row, $extraRowEdge['group']['totals']);
         }
     }    
     
@@ -270,15 +265,15 @@ class BootGroupGridView extends TbGridView {
     * @param mixed $row
     * @param mixed $change
     */
-    private function renderExtraRow($row, $change, $columnsInExtra)
+    private function renderExtraRow($row, $totals)
     {
         $data = $this->dataProvider->data[$row]; 
         if($this->extraRowExpression) { //user defined expression, use it!
-            $content = $this->evaluateExpression($this->extraRowExpression, array('data'=>$data, 'row'=>$row, 'values' => $change['columns'], 'totals' => $change['totals']));
+            $content = $this->evaluateExpression($this->extraRowExpression, array('data'=>$data, 'row'=>$row, 'totals' => $totals));
         } else {  //generate value
             $values = array();
-            foreach($columnsInExtra as $c) {
-                $values[] = $change['columns'][$c]['value'];
+            foreach($this->extraRowColumns as $colName) {
+                $values[] = CHtml::encode(CHtml::value($data, $colName));
             }
             $content = '<strong>'.implode(' :: ', $values).'</strong>';  
         }
@@ -305,6 +300,26 @@ class BootGroupGridView extends TbGridView {
                 $value=CHtml::value($data,$column->name);
 
             return $value===null ? $column->grid->nullDisplay : $column->grid->getFormatter()->format($value, $column->type);
+    }
+    
+    /**
+    * Is current row start or end of group in particular column 
+    */
+    private function isGroupEdge($colName, $row) 
+    {
+        $result = array();
+        foreach($this->_groups[$colName] as $index => $v) {
+           if($v['start'] == $row) {
+               $result['start'] = $row;
+               $result['group'] = $v;
+           }
+           if($v['end'] == $row) {
+               $result['end'] = $row;
+               $result['group'] = $v;
+           } 
+           if(count($result)) break;
+        }
+        return $result;
     }
 
 }
