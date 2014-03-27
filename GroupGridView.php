@@ -293,8 +293,10 @@ class GroupGridView extends CGridView {
     * @param mixed $row
     * @param mixed $data
     */
-    private function getDataCellContent($column, $data, $row)
+    public static function getDataCellContent($column, $array_data, $row)
     {
+		$data = $array_data[$row];
+		
         if($column->value!==null)
             $value=$column->evaluateExpression($column->value, array('data'=>$data,'row'=>$row));
         else if($column->name!==null)
